@@ -69,6 +69,10 @@ class NewsFlashQuery(BaseModel):
 
 
 def news_flash():
+    import sys
+    sys.stdin = open("/dev/tty")
+
+    import pdb; pdb.set_trace()
     news_flash_id = request.values.get("id")
 
     if news_flash_id is not None:
@@ -105,6 +109,12 @@ def news_flash():
 
 def news_flash_v2():
     requested_query_params = normalize_query(request.args)
+    import sys
+    #sys.stdin = open("/dev/tty")
+    requested_query_params["news_flash_id"] = 138217
+    
+    print(requested_query_params)
+    print("here")
     try:
         validated_query_params = NewsFlashQuery(**requested_query_params).dict(exclude_none=True)
     except ValidationError as e:
@@ -112,9 +122,12 @@ def news_flash_v2():
 
     if "id" in validated_query_params:
         return get_news_flash_by_id(validated_query_params["id"])
-
-    query = gen_news_flash_query_v2(db.session, validated_query_params)
-    news_flashes = query.all()
+    #import pdb; pdb.set_trace()
+    query = db.session.query(NewsFlash)
+    news_flash_with_id = query.filter(NewsFlash.id == requested_query_params["news_flash_id"]).first()
+    requested_query_params["news_flash_id"] = 138217
+    validated_query_params["by_date"] = news_flash_with_id.date
+    news_flashes = gen_news_flash_query_v2(db.session, validated_query_params)
 
     news_flashes_jsons = [n.serialize() for n in news_flashes]
     for news_flash in news_flashes_jsons:
@@ -211,6 +224,7 @@ def gen_news_flash_query(
 
 def gen_news_flash_query_v2(session, valid_params: dict):
     query = session.query(NewsFlash)
+    #import pdb; pdb.set_trace()
     for param, value in valid_params.items():
         if param == "road_number":
             query = query.filter(NewsFlash.road1 == value)
@@ -233,9 +247,15 @@ def gen_news_flash_query_v2(session, valid_params: dict):
             not_(and_(NewsFlash.lat == None, NewsFlash.lon == None)),
             )
     ).order_by(NewsFlash.date.desc())
+
+    if "by_date" in valid_params:
+        before = query.filter(valid_params["by_date"] >= NewsFlash.date).order_by(NewsFlash.date.desc()).limit(valid_params["limit"]//2).all()
+        after = query.filter(valid_params["by_date"] < NewsFlash.date).order_by(NewsFlash.date.desc()).limit(valid_params["limit"]//2).all()
+        return before[::-1] + after
+
     query = query.offset(valid_params["offset"])
     query = query.limit(valid_params["limit"])
-    return query
+    return query.all()
 
 
 def set_display_source(news_flash):
